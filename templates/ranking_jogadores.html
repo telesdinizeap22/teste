@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Ranking de Jogadores{% endblock %}
+{% block content %}
+
+<h3>Ranking de Jogadores</h3>
+<div class="card-grid">
+{% for metric, values in ranking_jogadores.items() %}
+<div class="card">
+  <div class="card-header bg-danger text-white">{{ metric }}</div>
+  <div class="card-body">
+    <div class="d-flex justify-content-between fw-bold border-bottom pb-1 mb-2 text-center">
+        <span style="flex:2">Jogador</span>
+        <span style="flex:1">Valor</span>
+        <span style="flex:1">Probabilidade</span>
+    </div>
+    {% set sorted_values = values|sort(attribute='prob', reverse=True) %}
+    {% for v in sorted_values %}
+    <div class="d-flex justify-content-between mb-1 text-center">
+        <span style="flex:2">{{ v.nome }}</span>
+        <span style="flex:1">{{ v[metric] }}</span>
+        <span style="flex:1">{{ v.prob }}%</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endfor %}
+</div>
+
+{% endblock %}

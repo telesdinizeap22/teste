@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}Página Inicial{% endblock %}
+{% block content %}
+<form class="row g-3 mb-4" method="get">
+    <div class="col-md-3"><label>Data</label><input type="date" class="form-control" name="data" value="{{ data_filter }}"></div>
+    <div class="col-md-4"><label>Competição</label>
+        <select class="form-select" name="competicao">
+            <option value="">Todos</option>
+            {% for c in competicoes %}
+            <option value="{{ c }}" {% if comp_filter==c %}selected{% endif %}>{{ c }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-4"><label>Equipe</label>
+        <select class="form-select" name="equipe">
+            <option value="">Todos</option>
+            {% for e in equipes %}
+            <option value="{{ e }}" {% if equipe_filter==e %}selected{% endif %}>{{ e }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-1 d-flex align-items-end"><button class="btn btn-primary w-100"><i class="fas fa-filter"></i></button></div>
+</form>
+
+<!-- Bingo do Dia -->
+<div class="card mb-4">
+<div class="card-header bg-success text-white"><i class="fas fa-star"></i> Bingo do Dia</div>
+<div class="card-body">
+    {% set bingo_sorted = bingo|sort(attribute='prob', reverse=True) %}
+    <div class="row justify-content-center">
+    {% for b in bingo_sorted %}
+        <div class="col-md-4 mb-2">
+            <div class="card p-2 text-center">
+                <div><strong>{{ b.jogo }}</strong></div>
+                <div class="d-flex justify-content-between fw-bold border-bottom pb-1 mt-1">
+                    <span style="flex:2">Métrica</span>
+                    <span style="flex:1">Valor</span>
+                    <span style="flex:1">Probabilidade</span>
+                </div>
+                <div class="d-flex justify-content-between">
+                    <span style="flex:2">{{ b.metric }}</span>
+                    <span style="flex:1">{{ b.valor }}</span>
+                    <span style="flex:1">{{ b.prob }}%</span>
+                </div>
+            </div>
+        </div>
+    {% endfor %}
+    {% if bingo|length == 0 %}<p class="text-muted text-center">Sem jogos no filtro selecionado.</p>{% endif %}
+    </div>
+</div>
+</div>
+
+<!-- Melhores Jogos do Dia -->
+<div class="card mb-4">
+<div class="card-header bg-info text-white"><i class="fas fa-trophy"></i> Melhores Jogos do Dia</div>
+<div class="card-body">
+    <div class="row justify-content-center">
+        {% for jogo in top_jogos %}
+        <div class="col-md-6 mb-3">
+            <div class="card p-2">
+                <div class="card-header bg-warning text-dark text-center">
+                    {{ jogo.time_casa }} vs {{ jogo.time_fora }}
+                </div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between fw-bold border-bottom pb-1 mb-1">
+                        <span style="flex:2">Métrica</span>
+                        <span style="flex:1">Valor</span>
+                        <span style="flex:1">Probabilidade</span>
+                    </div>
+                    {% set metrics = [
+                        {'metric':'chutes','valor':jogo.chutes,'prob':jogo.chutes_prob},
+                        {'metric':'chutes_ao_gol','valor':jogo.chutes_ao_gol,'prob':jogo.chutes_ao_gol_prob},
+                        {'metric':'gols','valor':jogo.gols,'prob':jogo.gols_prob},
+                        {'metric':'faltas','valor':jogo.faltas,'prob':jogo.faltas_prob},
+                        {'metric':'cartoes','valor':jogo.cartoes,'prob':jogo.cartoes_prob},
+                        {'metric':'laterais','valor':jogo.laterais,'prob':jogo.laterais_prob},
+                        {'metric':'escanteios','valor':jogo.escanteios,'prob':jogo.escanteios_prob},
+                        {'metric':'tiros_meta','valor':jogo.tiros_meta,'prob':jogo.tiros_meta_prob}
+                    ] %}
+                    {% set metrics_sorted = metrics|sort(attribute='prob', reverse=True) %}
+                    {% for m in metrics_sorted %}
+                    <div class="d-flex justify-content-between">
+                        <span style="flex:2">{{ m.metric }}</span>
+                        <span style="flex:1">{{ m.valor }}</span>
+                        <span style="flex:1">{{ m.prob }}%</span>
+                    </div>
+                    {% endfor %}
+                    <div class="text-center mt-2">
+                        <button class="btn btn-sm btn-primary" onclick="abrirH2H('{{ jogo.time_casa }}','{{ jogo.time_fora }}')">Ver H2H</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+</div>
+
+<!-- Modal H2H -->
+<div class="modal fade" id="h2hModal" tabindex="-1" aria-labelledby="h2hModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="h2hModalLabel">H2H</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <table class="table table-bordered text-center" id="h2hTable">
+          <thead>
+            <tr>
+              <th>Jogo</th>
+              <th>Chutes</th>
+              <th>Chutes ao Gol</th>
+              <th>Gols (T1 x T2)</th>
+              <th>Faltas</th>
+              <th>Cartões</th>
+              <th>Laterais</th>
+              <th>Escanteios</th>
+              <th>Tiros de Meta</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function abrirH2H(time1, time2){
+    fetch(`/h2h?time1=${time1}&time2=${time2}`)
+    .then(res => res.json())
+    .then(data => {
+        const tbody = document.querySelector("#h2hTable tbody");
+        tbody.innerHTML = "";
+
+        // Mostrar cada um dos 10 jogos simulados com métricas e resultado
+        data.jogos.forEach((jogo, idx) => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td>Jogo ${idx+1}</td>
+                <td>${jogo.chutes}</td>
+                <td>${jogo.chutes_ao_gol}</td>
+                <td>${jogo.gols1} x ${jogo.gols2}</td>
+                <td>${jogo.faltas}</td>
+                <td>${jogo.cartoes}</td>
+                <td>${jogo.laterais}</td>
+                <td>${jogo.escanteios}</td>
+                <td>${jogo.tiros_meta}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        document.getElementById("h2hModalLabel").innerText = `H2H: ${time1} vs ${time2}`;
+        var h2hModal = new bootstrap.Modal(document.getElementById('h2hModal'));
+        h2hModal.show();
+    });
+}
+</script>
+{% endblock %}
