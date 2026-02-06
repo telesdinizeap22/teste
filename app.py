@@ -2,7 +2,16 @@ from flask import Flask, render_template, request, jsonify
 import random
 from datetime import datetime, timedelta
 
-app = Flask(__name__)
+import os
+from flask import Flask, render_template
+
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+
+app = Flask(
+    __name__,
+    template_folder=os.path.join(BASE_DIR, "templates"),
+    static_folder=os.path.join(BASE_DIR, "static")
+)
 
 # ======================
 # DADOS SIMULADOS
