@@ -4,6 +4,12 @@ from datetime import datetime, timedelta
 
 from flask import Flask, render_template, request, jsonify
 
+from data.cache import TTLCache
+from data.provider_fake import FakeProvider
+
+# ======================
+# CONFIG / PROVIDER
+# ======================
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 app = Flask(
@@ -11,81 +17,45 @@ app = Flask(
     template_folder=os.path.join(BASE_DIR, "templates"),
     static_folder=os.path.join(BASE_DIR, "static")
 )
-TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 
-print("=== DEBUG STARTUP ===")
-print("BASE_DIR:", BASE_DIR)
-print("CWD:", os.getcwd())
-print("TEMPLATES_DIR:", TEMPLATES_DIR)
-print("templates exists?", os.path.exists(TEMPLATES_DIR))
-if os.path.exists(TEMPLATES_DIR):
-    print("templates list:", os.listdir(TEMPLATES_DIR))
-print("=====================")
+# Cache TTL configurável via ambiente (Render: Environment Variables)
+# Ex: CACHE_TTL=60
+cache = TTLCache()
+provider = FakeProvider(cache=cache, ttl_seconds=int(os.getenv("CACHE_TTL", "60")))
 
-@app.route("/__debug")
-def __debug():
-    data = {
-        "base_dir": BASE_DIR,
-        "cwd": os.getcwd(),
-        "templates_dir": TEMPLATES_DIR,
-        "templates_exists": os.path.exists(TEMPLATES_DIR),
-        "templates_list": os.listdir(TEMPLATES_DIR) if os.path.exists(TEMPLATES_DIR) else None,
-        "root_files": os.listdir(BASE_DIR),
-    }
-    return jsonify(data)
+
+def _flatten_jogo(jogo: dict) -> dict:
+    """
+    Mantém compatibilidade com os templates antigos:
+    - Se vier no formato novo (com jogo["metricas"]), copia as métricas para o topo.
+    - Mantém também o campo "metricas" para uso futuro.
+    """
+    if not isinstance(jogo, dict):
+        return jogo
+
+    metricas = jogo.get("metricas")
+    if isinstance(metricas, dict):
+        # Copia métricas para o nível de cima (não remove "metricas")
+        for k, v in metricas.items():
+            # Se já existir no topo, não sobrescreve
+            if k not in jogo:
+                jogo[k] = v
+    return jogo
+
+
+def _get_jogos_flat(days: int = 25) -> list[dict]:
+    jogos_raw = provider.get_jogos(days=days)
+    return [_flatten_jogo(dict(j)) for j in jogos_raw]
+
 
 # ======================
-# DADOS SIMULADOS
+# DADOS SIMULADOS (LEGADO: JOGADORES)
 # ======================
-
-equipes = [
-    "Real Madrid", "Barcelona", "Manchester United",
-    "Liverpool", "Bayern", "PSG"
-]
-
 jogadores = [
     "Jogador A", "Jogador B", "Jogador C",
     "Jogador D", "Jogador E", "Jogador F"
 ]
 
-# ----------------------
-# GERA JOGOS
-# ----------------------
-def gerar_jogos():
-    jogos = []
-    for i in range(25):
-        t1, t2 = random.sample(equipes, 2)
-        jogos.append({
-            "time_casa": t1,
-            "time_fora": t2,
-            "chutes": random.randint(5, 20),
-            "chutes_prob": random.randint(60, 100),
-            "chutes_ao_gol": random.randint(2, 15),
-            "chutes_ao_gol_prob": random.randint(60, 100),
-            "gols": random.randint(0, 5),
-            "gols_prob": random.randint(60, 100),
-            "faltas": random.randint(5, 20),
-            "faltas_prob": random.randint(60, 100),
-            "cartoes": random.randint(0, 5),
-            "cartoes_prob": random.randint(60, 100),
-            "laterais": random.randint(0, 10),
-            "laterais_prob": random.randint(60, 100),
-            "escanteios": random.randint(0, 10),
-            "escanteios_prob": random.randint(60, 100),
-            "tiros_meta": random.randint(0, 10),
-            "tiros_meta_prob": random.randint(60, 100),
-            "data": (datetime.today() - timedelta(days=i)).strftime("%Y-%m-%d"),
-            "competicao": random.choice([
-                "La Liga", "Premier League",
-                "Bundesliga", "Serie A", "Ligue 1"
-            ])
-        })
-    return jogos
-
-
-# ----------------------
-# GERA JOGADORES
-# ----------------------
 def gerar_jogadores():
     lista = []
     for j in jogadores:
@@ -102,25 +72,26 @@ def gerar_jogadores():
         })
     return lista
 
-
-# ======================
-# DADOS GLOBAIS
-# ======================
-jogos = gerar_jogos()
+# Mantém jogadores como legado por enquanto (hoje o provider não entrega isso nesse formato)
 jogs = gerar_jogadores()
+
 
 # ======================
 # PÁGINA INICIAL
 # ======================
 @app.route("/")
 def home():
-    return render_template("home.html")
+    jogos = _get_jogos_flat(days=25)
+    return render_template("home.html", jogos=jogos)
+
 
 # ======================
 # SUGESTÃO DE APOSTA (ANTIGO INDEX)
 # ======================
 @app.route("/sugestoes")
 def sugestoes():
+    jogos = _get_jogos_flat(days=25)
+
     data_filter = request.args.get("data", "")
     comp_filter = request.args.get("competicao", "")
     equipe_filter = request.args.get("equipe", "")
@@ -128,13 +99,13 @@ def sugestoes():
     filtrados = jogos
 
     if data_filter:
-        filtrados = [j for j in filtrados if j["data"] == data_filter]
+        filtrados = [j for j in filtrados if j.get("data") == data_filter]
     if comp_filter:
-        filtrados = [j for j in filtrados if j["competicao"] == comp_filter]
+        filtrados = [j for j in filtrados if j.get("competicao") == comp_filter]
     if equipe_filter:
         filtrados = [
             j for j in filtrados
-            if equipe_filter in (j["time_casa"], j["time_fora"])
+            if equipe_filter in (j.get("time_casa"), j.get("time_fora"))
         ]
 
     metricas = [
@@ -146,12 +117,15 @@ def sugestoes():
     bingo = []
     for j in filtrados:
         for m in metricas:
-            if j[f"{m}_prob"] >= 75:
+            prob_key = f"{m}_prob"
+            # Com flatten, continua existindo j[m] e j[prob_key]
+            prob = j.get(prob_key)
+            if prob is not None and prob >= 75:
                 bingo.append({
-                    "jogo": f"{j['time_casa']} vs {j['time_fora']}",
+                    "jogo": f"{j.get('time_casa')} vs {j.get('time_fora')}",
                     "metric": m,
-                    "valor": j[m],
-                    "prob": j[f"{m}_prob"]
+                    "valor": j.get(m),
+                    "prob": prob
                 })
 
     bingo = sorted(bingo, key=lambda x: x["prob"], reverse=True)[:7]
@@ -159,9 +133,9 @@ def sugestoes():
     # Melhores jogos
     top_jogos = filtrados[:6]
 
-    competicoes = sorted(set(j["competicao"] for j in jogos))
+    competicoes = sorted(set(j.get("competicao") for j in jogos if j.get("competicao")))
     equipes_list = sorted(
-        set(t for j in jogos for t in (j["time_casa"], j["time_fora"]))
+        set(t for j in jogos for t in (j.get("time_casa"), j.get("time_fora")) if t)
     )
 
     return render_template(
@@ -175,11 +149,14 @@ def sugestoes():
         equipe_filter=equipe_filter
     )
 
+
 # ======================
 # RANKING DE EQUIPES
 # ======================
 @app.route("/ranking/equipes")
 def ranking_equipes():
+    jogos = _get_jogos_flat(days=25)
+
     metricas = [
         "chutes", "chutes_ao_gol", "gols", "faltas",
         "cartoes", "laterais", "escanteios", "tiros_meta"
@@ -189,15 +166,18 @@ def ranking_equipes():
 
     for m in metricas:
         lista = []
+        prob_key = f"{m}_prob"
         for j in jogos:
             lista.append({
-                "time_casa": j["time_casa"],
-                m: j[m],
-                "prob": j[f"{m}_prob"]
+                "time_casa": j.get("time_casa"),
+                m: j.get(m),
+                "prob": j.get(prob_key)
             })
 
         ranking_data[m] = sorted(
-            lista, key=lambda x: x["prob"], reverse=True
+            lista,
+            key=lambda x: (x["prob"] if x["prob"] is not None else -1),
+            reverse=True
         )[:10]
 
     return render_template(
@@ -205,8 +185,9 @@ def ranking_equipes():
         ranking_equipes=ranking_data
     )
 
+
 # ======================
-# RANKING DE JOGADORES
+# RANKING DE JOGADORES (LEGADO HOJE)
 # ======================
 @app.route("/ranking/jogadores")
 def ranking_jogadores():
@@ -232,8 +213,9 @@ def ranking_jogadores():
         ranking_jogadores=ranking_data
     )
 
+
 # ======================
-# H2H
+# H2H (SIMULADO)
 # ======================
 @app.route("/h2h")
 def h2h():
@@ -262,4 +244,5 @@ def h2h():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    debug = os.getenv("FLASK_DEBUG", "1") == "1"
+    app.run(debug=debug)
