@@ -4,9 +4,10 @@ from flask import Flask, render_template, request, jsonify
 
 from data.cache import TTLCache
 from data.provider_fake import FakeProvider
+from data.provider_api_football import ApiFootballProvider
 
 # ======================
-# CONFIG / PROVIDER
+# APP
 # ======================
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -16,17 +17,25 @@ app = Flask(
     static_folder=os.path.join(BASE_DIR, "static")
 )
 
-# Cache TTL configurável via ambiente (Render: Environment Variables)
-# Ex: CACHE_TTL=60
+# ======================
+# PROVIDER SELECTION (OPÇÃO 4)
+# ======================
 cache = TTLCache()
-provider = FakeProvider(cache=cache, ttl_seconds=int(os.getenv("CACHE_TTL", "60")))
+
+provider_name = os.getenv("DATA_PROVIDER", "fake").lower()
+cache_ttl = int(os.getenv("CACHE_TTL", "60"))
+
+if provider_name == "api_football":
+    provider = ApiFootballProvider(cache=cache, ttl_seconds=cache_ttl)
+else:
+    provider = FakeProvider(cache=cache, ttl_seconds=cache_ttl)
 
 
 def _flatten_jogo(jogo: dict) -> dict:
     """
-    Compatibilidade com templates antigos:
-    Se vier no formato novo (com jogo["metricas"]), copia as métricas para o topo.
-    Assim continua existindo: j["chutes"], j["chutes_prob"], etc.
+    Compatibilidade com seus templates atuais:
+    - Se vier no formato novo com jogo["metricas"], copia as métricas pro topo
+      para continuar existindo: j["chutes"], j["chutes_prob"], etc.
     """
     metricas = jogo.get("metricas")
     if isinstance(metricas, dict):
@@ -42,7 +51,7 @@ def _get_jogos_flat(days: int = 25) -> list[dict]:
 
 
 # ======================
-# PÁGINA INICIAL
+# HOME
 # ======================
 @app.route("/")
 def home():
@@ -51,7 +60,7 @@ def home():
 
 
 # ======================
-# SUGESTÃO DE APOSTA (ANTIGO INDEX)
+# SUGESTÕES
 # ======================
 @app.route("/sugestoes")
 def sugestoes():
@@ -78,7 +87,6 @@ def sugestoes():
         "cartoes", "laterais", "escanteios", "tiros_meta"
     ]
 
-    # Bingo do Dia
     bingo = []
     for j in filtrados:
         for m in metricas:
@@ -94,7 +102,6 @@ def sugestoes():
 
     bingo = sorted(bingo, key=lambda x: x["prob"], reverse=True)[:7]
 
-    # Melhores jogos
     top_jogos = filtrados[:6]
 
     competicoes = sorted(set(j.get("competicao") for j in jogos if j.get("competicao")))
@@ -115,7 +122,7 @@ def sugestoes():
 
 
 # ======================
-# RANKING DE EQUIPES
+# RANKING EQUIPES
 # ======================
 @app.route("/ranking/equipes")
 def ranking_equipes():
@@ -151,7 +158,7 @@ def ranking_equipes():
 
 
 # ======================
-# RANKING DE JOGADORES (MIGRADO PARA PROVIDER ✅)
+# RANKING JOGADORES
 # ======================
 @app.route("/ranking/jogadores")
 def ranking_jogadores():
@@ -182,7 +189,7 @@ def ranking_jogadores():
 
 
 # ======================
-# H2H (SIMULADO)
+# H2H (simulado)
 # ======================
 @app.route("/h2h")
 def h2h():
