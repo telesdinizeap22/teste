@@ -1,7 +1,5 @@
 import os
 import random
-from datetime import datetime, timedelta
-
 from flask import Flask, render_template, request, jsonify
 
 from data.cache import TTLCache
@@ -26,18 +24,13 @@ provider = FakeProvider(cache=cache, ttl_seconds=int(os.getenv("CACHE_TTL", "60"
 
 def _flatten_jogo(jogo: dict) -> dict:
     """
-    Mantém compatibilidade com os templates antigos:
-    - Se vier no formato novo (com jogo["metricas"]), copia as métricas para o topo.
-    - Mantém também o campo "metricas" para uso futuro.
+    Compatibilidade com templates antigos:
+    Se vier no formato novo (com jogo["metricas"]), copia as métricas para o topo.
+    Assim continua existindo: j["chutes"], j["chutes_prob"], etc.
     """
-    if not isinstance(jogo, dict):
-        return jogo
-
     metricas = jogo.get("metricas")
     if isinstance(metricas, dict):
-        # Copia métricas para o nível de cima (não remove "metricas")
         for k, v in metricas.items():
-            # Se já existir no topo, não sobrescreve
             if k not in jogo:
                 jogo[k] = v
     return jogo
@@ -46,34 +39,6 @@ def _flatten_jogo(jogo: dict) -> dict:
 def _get_jogos_flat(days: int = 25) -> list[dict]:
     jogos_raw = provider.get_jogos(days=days)
     return [_flatten_jogo(dict(j)) for j in jogos_raw]
-
-
-# ======================
-# DADOS SIMULADOS (LEGADO: JOGADORES)
-# ======================
-jogadores = [
-    "Jogador A", "Jogador B", "Jogador C",
-    "Jogador D", "Jogador E", "Jogador F"
-]
-
-def gerar_jogadores():
-    lista = []
-    for j in jogadores:
-        lista.append({
-            "nome": j,
-            "chutes": random.randint(0, 10),
-            "chutes_prob": random.randint(60, 100),
-            "chutes_ao_gol": random.randint(0, 8),
-            "chutes_ao_gol_prob": random.randint(60, 100),
-            "faltas": random.randint(0, 5),
-            "faltas_prob": random.randint(60, 100),
-            "desarmes": random.randint(0, 10),
-            "desarmes_prob": random.randint(60, 100)
-        })
-    return lista
-
-# Mantém jogadores como legado por enquanto (hoje o provider não entrega isso nesse formato)
-jogs = gerar_jogadores()
 
 
 # ======================
@@ -118,7 +83,6 @@ def sugestoes():
     for j in filtrados:
         for m in metricas:
             prob_key = f"{m}_prob"
-            # Com flatten, continua existindo j[m] e j[prob_key]
             prob = j.get(prob_key)
             if prob is not None and prob >= 75:
                 bingo.append({
@@ -187,25 +151,28 @@ def ranking_equipes():
 
 
 # ======================
-# RANKING DE JOGADORES (LEGADO HOJE)
+# RANKING DE JOGADORES (MIGRADO PARA PROVIDER ✅)
 # ======================
 @app.route("/ranking/jogadores")
 def ranking_jogadores():
-    metricas = ["chutes", "chutes_ao_gol", "faltas", "desarmes"]
+    jogs = provider.get_ranking_jogadores()
 
+    metricas = ["chutes", "chutes_ao_gol", "faltas", "desarmes"]
     ranking_data = {}
 
     for m in metricas:
         lista = []
         for j in jogs:
             lista.append({
-                "nome": j["nome"],
-                m: j[m],
-                "prob": j[f"{m}_prob"]
+                "nome": j.get("nome"),
+                m: j.get(m),
+                "prob": j.get(f"{m}_prob")
             })
 
         ranking_data[m] = sorted(
-            lista, key=lambda x: x["prob"], reverse=True
+            lista,
+            key=lambda x: (x["prob"] if x["prob"] is not None else -1),
+            reverse=True
         )[:10]
 
     return render_template(
