@@ -1,9 +1,8 @@
-from flask import Flask, render_template, request, jsonify
+import os
 import random
 from datetime import datetime, timedelta
 
-import os
-from flask import Flask, render_template
+from flask import Flask, render_template, request, jsonify
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
