@@ -11,6 +11,28 @@ app = Flask(
     template_folder=os.path.join(BASE_DIR, "templates"),
     static_folder=os.path.join(BASE_DIR, "static")
 )
+TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
+
+print("=== DEBUG STARTUP ===")
+print("BASE_DIR:", BASE_DIR)
+print("CWD:", os.getcwd())
+print("TEMPLATES_DIR:", TEMPLATES_DIR)
+print("templates exists?", os.path.exists(TEMPLATES_DIR))
+if os.path.exists(TEMPLATES_DIR):
+    print("templates list:", os.listdir(TEMPLATES_DIR))
+print("=====================")
+
+@app.route("/__debug")
+def __debug():
+    data = {
+        "base_dir": BASE_DIR,
+        "cwd": os.getcwd(),
+        "templates_dir": TEMPLATES_DIR,
+        "templates_exists": os.path.exists(TEMPLATES_DIR),
+        "templates_list": os.listdir(TEMPLATES_DIR) if os.path.exists(TEMPLATES_DIR) else None,
+        "root_files": os.listdir(BASE_DIR),
+    }
+    return jsonify(data)
 
 # ======================
 # DADOS SIMULADOS
