@@ -8,6 +8,7 @@ from .provider_base import SportsDataProvider
 EQUIPES = ["Real Madrid", "Barcelona", "Manchester United", "Liverpool", "Bayern", "PSG"]
 JOGADORES = ["Jogador A", "Jogador B", "Jogador C", "Jogador D", "Jogador E", "Jogador F"]
 
+
 class FakeProvider(SportsDataProvider):
     def __init__(self, cache: TTLCache, ttl_seconds: int = 60) -> None:
         self.cache = cache
@@ -56,20 +57,12 @@ class FakeProvider(SportsDataProvider):
         if cached is not None:
             return cached
 
-        # Ranking simples por "score"
         ranking = [{"equipe": e, "score": random.randint(60, 100)} for e in EQUIPES]
         self.cache.set(key, ranking, self.ttl_seconds)
         return ranking
 
     def get_ranking_jogadores(self) -> List[Dict]:
-        """
-        Retorna jogadores com as mesmas métricas que seu ranking atual espera:
-        - chutes, chutes_prob
-        - chutes_ao_gol, chutes_ao_gol_prob
-        - faltas, faltas_prob
-        - desarmes, desarmes_prob
-        """
-        key = "fake:rank_jogadores_detalhado"
+        key = "fake:rank_jogadores"
         cached = self.cache.get(key)
         if cached is not None:
             return cached
